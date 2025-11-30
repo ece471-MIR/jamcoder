@@ -37,7 +37,7 @@ class PhonemeDiskLoader(PhonemeLoader):
     def __init__(self, phoneme_subpath: str):
         print(f"Loading annotations from {phoneme_subpath}...")
 
-        phoneme_path = Path.cwd().joinpath(Path(phoneme_subpath))
+        phoneme_path = Path.cwd().joinpath(Path(phoneme_subpath)).resolve()
         if not phoneme_path.exists():
             print(f"Error: {phoneme_path} does not exist")
             exit(-1)
@@ -79,7 +79,7 @@ class PhonemeMemLoader(PhonemeLoader):
     def __init__(self, phoneme_subpath: str):
         print(f"Loading annotations from {phoneme_subpath}...")
 
-        phoneme_path = Path.cwd().joinpath(Path(phoneme_subpath))
+        phoneme_path = Path.cwd().joinpath(Path(phoneme_subpath)).resolve()
         if not phoneme_path.exists():
             print(f"Error: {phoneme_path} does not exist")
             exit(-1)
@@ -118,7 +118,8 @@ class PhonemeMemLoader(PhonemeLoader):
 
 if __name__ == '__main__':
     print('=== PhonemeLoader demo ==================')
-    james_path = Path(__file__).parent.resolve().joinpath(Path('data/james'))
+    root_path = Path(__file__).parent.parent.resolve()
+    james_path = root_path.joinpath(Path('data/james'))
     # james = PhonemeDiskLoader(james_path)
     james = PhonemeMemLoader(james_path)
 
