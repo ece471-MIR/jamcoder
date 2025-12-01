@@ -4,35 +4,84 @@ from pathlib import Path
 import textgrids
 import librosa
 
+from phoneme import Phoneme
+
 class PhonemeLoader(ABC):
     """
-    PhonemeLoader  
-      do not instantiate directly  
-      abstrat class for PhonemeDiskLoader, PhonemeMemLoader  
+    PhonemeLoader class:
+      Accepts phoneme_subpath (absolute or relative)
+      Stores wavs and phoneme TextGrid annotations,
+      which can be queried by word or phoneme.
+    Abstract class for PhonemeDiskLoader, PhonemeMemLoader.
+    Do not instantiate directly.
     """
     @abstractmethod
     def __init__(self, phoneme_subpath: str):
-        """
-        phoneme_subpath: absolute or relative path of data directory
-        """
-        pass
-
-    @abstractmethod
-    def __getitem__(self, key: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
         pass
 
     def __len__(self) -> int:
-        return self.num_grids
+        return self.num_phonemes
     
-    def get_grid(self, key: str) -> textgrids.TextGrid:
-        return self.grid_dict[key][1]
+    def list_phonemes(self) -> list[str]:
+        """
+        Returns a list of all phonemes present across all TextGrid annotations.
+        Includes ''.
+        """
+        return list(self.phoneme_dict.keys())
+
+    @abstractmethod
+    def get_word_data(self, word: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
+        """
+        Returns the following data tuple for the queried word:
+        (
+          (waveform vector, sampling rate),
+          TextGrid
+        )
+        """
+        pass
+    
+    def get_phoneme(self, phoneme: str) -> Phoneme:
+        """
+        Returns the Phoneme object corresponding to the queried phoneme.
+        """
+        return self.phoneme_dict[phoneme]
+    
+    def get_phoneme_data(self, phoneme: str) -> list[tuple[tuple[str, int], tuple[np.ndarray, int], textgrids.Interval]]:
+        """
+        Returns a list containing all instances of the queried phoneme:
+        list[
+          (
+            (word, interval index),
+            (waveform vector, sampling rate),
+            TextGrid Interval
+          )
+        ]
+        """
+        phoneme_obj = self.phoneme_dict[phoneme]
+        data = []
+
+        for instance in range(len(phoneme_obj)):
+            word, i = phoneme_obj[instance]
+            wav, grid = self.get_word_data(word)
+
+            grid_i = grid['phonetic'][i]
+            t_start = int(np.floor(wav[1] * grid_i.xmin))
+            t_end = int(np.ceil(wav[1] * grid_i.xmax))
+
+            data.append((
+                (word, i),
+                (wav[0][t_start:t_end], wav[1]),
+                grid_i
+            ))
+        
+        return data
 
 class PhonemeDiskLoader(PhonemeLoader):
     """
-    PhonemeDiskLoader  
-      on-disk approach where wavfiles not loaded into memory, but grids are  
-      all textgrid annotations stored as TextGrid objects  
-      i think it all gets cached anyway so what was even the point  
+    PhonemeDiskLoader class (PhonemeLoader with wavfiles stored on-disk)
+      Accepts phoneme_subpath (absolute or relative)
+      Stores wavs and phoneme TextGrid annotations,
+      which can be queried by word or phoneme.
     """
     def __init__(self, phoneme_subpath: str):
         print(f"Loading annotations from {phoneme_subpath}...")
@@ -44,6 +93,7 @@ class PhonemeDiskLoader(PhonemeLoader):
 
         self.voice = phoneme_path.stem
         self.grid_dict = {}
+        self.phoneme_dict = {}
 
         grid_files = sorted(phoneme_path.glob("*.TextGrid"))
         for grid_file in grid_files:
@@ -61,20 +111,29 @@ class PhonemeDiskLoader(PhonemeLoader):
                 print(f'Warning: Could not open {grid_file.name} as TextGrid')
                 continue
 
-        self.num_grids = len(self.grid_dict)
-        print(f"Loaded {self.num_grids} wavfile and textgrid pairs from {phoneme_subpath}")
+            for i in range(len(grid['phonetic'])):
+                phoneme = grid['phonetic'][i].text
+                
+                if (phoneme in self.phoneme_dict):
+                    self.phoneme_dict[phoneme].append(stem, i)
+                else:
+                    self.phoneme_dict[phoneme] = Phoneme(phoneme, [stem], [i])
 
-    def __getitem__(self, key: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
-        (wav_file, grid) = self.grid_dict[key]
+        self.num_phonemes = len(self.phoneme_dict)
+        print(f'Loaded {len(self.grid_dict)} wavfile and textgrid pairs from {phoneme_subpath}')
+
+    def get_word_data(self, word: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
+        (wav_file, grid) = self.grid_dict[word]
         wav = librosa.load(wav_file, sr=None, mono=True)
 
         return (wav, grid)
 
 class PhonemeMemLoader(PhonemeLoader):
     """
-    PhonemeMemLoader  
-      in-memory approach where wavfiles and grids loaded into memory  
-      all textgrid annotations stored as TextGrid objects  
+    PhonemeMemLoader class (PhonemeLoader with wavfiles stored in-memory)
+      Accepts phoneme_subpath (absolute or relative)
+      Stores wavs and phoneme TextGrid annotations,
+      which can be queried by word or phoneme.
     """
     def __init__(self, phoneme_subpath: str):
         print(f"Loading annotations from {phoneme_subpath}...")
@@ -86,6 +145,7 @@ class PhonemeMemLoader(PhonemeLoader):
 
         self.voice = phoneme_path.stem
         self.grid_dict = {}
+        self.phoneme_dict = {}
 
         grid_files = sorted(phoneme_path.glob("*.TextGrid"))
         for grid_file in grid_files:
@@ -109,12 +169,19 @@ class PhonemeMemLoader(PhonemeLoader):
                 continue
 
             self.grid_dict[stem] = (wav, grid)
+            for i in range(len(grid['phonetic'])):
+                phoneme = grid['phonetic'][i].text
+                
+                if (phoneme in self.phoneme_dict):
+                    self.phoneme_dict[phoneme].append(stem, i)
+                else:
+                    self.phoneme_dict[phoneme] = Phoneme(phoneme, [stem], [i])
 
-        self.num_grids = len(self.grid_dict)
-        print(f'Loaded {self.num_grids} wavfile and textgrid pairs from {phoneme_subpath}')
-
-    def __getitem__(self, key: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
-        return self.grid_dict[key]
+        self.num_phonemes = len(self.phoneme_dict)
+        print(f'Loaded {len(self.grid_dict)} wavfile and textgrid pairs from {phoneme_subpath}')
+    
+    def get_word_data(self, word: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
+        return self.grid_dict[word]
 
 if __name__ == '__main__':
     print('=== PhonemeLoader demo ==================')
@@ -125,13 +192,19 @@ if __name__ == '__main__':
 
     print('\n=== data examples ==================')
 
-    example = james['teacher'] # pick a wav+textgrid   
-    print(f'wav: {example[0]}') # wavfile (nd.array, sampling_rate)
-    print(f'duration: {example[1].xmin}-{example[1].xmax}')
-    print(example[1]['orthographic'][1]) # primary orthographic interval
+    # list all phonemes represented in dataset
+    all_phonemes = james.list_phonemes()
+    print(f'{len(all_phonemes)} phonemes found: {all_phonemes}')
 
-    # all phonetic intervals
-    for i in range(len(example[1]['phonetic'])):
-        sclomp = example[1]['phonetic'][i]
-        print(f' [{i}] {sclomp.text:<8}\t{sclomp.xmin}-{sclomp.xmax}')
-        # print(f' [{i}] {sclomp}}')
+    # pick a phoneme any phoneme
+    phoneme = 'UH1'
+
+    # get the word, wav section and textgrid interval of every instance
+    example = james.get_phoneme_data(phoneme)
+
+    # print data for every instance of phoneme
+    print(f'{len(example)} instances of phoneme "{phoneme}":')
+    for ((word, i), (wav_seg, sr), grid_i) in example:
+        print(f'  interval {i} of word {word}:')
+        print(f'    wav_seg duration: {len(wav_seg) / sr}s')
+        print(f'    grid_i: {grid_i}')
