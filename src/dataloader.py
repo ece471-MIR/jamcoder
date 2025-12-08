@@ -4,7 +4,8 @@ from pathlib import Path
 import textgrids
 import librosa
 
-from phoneme import Phoneme
+from phoneme import Phoneme, PhonemeInstance
+from intonation import f0_heuristic
 
 class PhonemeLoader(ABC):
     """
@@ -19,18 +20,21 @@ class PhonemeLoader(ABC):
     def __init__(self, phoneme_subpath: str):
         pass
 
-    def __len__(self) -> int:
+    def __len__(self) \
+            -> int:
         return self.num_phonemes
     
-    def list_phonemes(self) -> list[str]:
+    def list_phonemes(self) \
+            -> list[str]:
         """
-        Returns a list of all phonemes present across all TextGrid annotations.
-        Includes ''.
+        Returns a list of the names of all phoneme present
+        across all TextGrid annotations including '' and 'XX'.
         """
         return list(self.phoneme_dict.keys())
 
     @abstractmethod
-    def get_word_data(self, word: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
+    def get_word_data(self, word: str) \
+            -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
         """
         Returns the following data tuple for the queried word:
         (
@@ -40,37 +44,39 @@ class PhonemeLoader(ABC):
         """
         pass
     
-    def get_phoneme(self, phoneme: str) -> Phoneme:
+    def get_phoneme(self, name: str) \
+            -> Phoneme:
         """
         Returns the Phoneme object corresponding to the queried phoneme.
         """
-        return self.phoneme_dict[phoneme]
+        return self.phoneme_dict[name]
     
-    def get_phoneme_data(self, phoneme: str) -> list[tuple[tuple[str, int], tuple[np.ndarray, int], textgrids.Interval]]:
+    def get_phoneme_data(self, name: str) \
+            -> list[tuple[PhonemeInstance, tuple[np.ndarray, int], textgrids.Interval]]:
         """
-        Returns a list containing all instances of the queried phoneme:
+        Returns a list containing informaiton about all instances of the
+        queried phoneme:
         list[
           (
-            (word, interval index),
+            PhonemeInstance,
             (waveform vector, sampling rate),
             TextGrid Interval
           )
         ]
         """
-        phoneme_obj = self.phoneme_dict[phoneme]
+        phoneme = self.phoneme_dict[name]
         data = []
 
-        for instance in range(len(phoneme_obj)):
-            word, i = phoneme_obj[instance]
-            wav, grid = self.get_word_data(word)
-
-            grid_i = grid['phonetic'][i]
-            t_start = int(np.floor(wav[1] * grid_i.xmin))
-            t_end = int(np.ceil(wav[1] * grid_i.xmax))
+        for instance in phoneme.instances:
+            (wav, sr), grid = self.get_word_data(instance.word)
+            
+            grid_i = grid['phonetic'][instance.interval]
+            wav_start = int(np.floor(sr * grid_i.xmin))
+            wav_end = int(np.floor(sr * grid_i.xmax))
 
             data.append((
-                (word, i),
-                (wav[0][t_start:t_end], wav[1]),
+                instance,
+                (wav[wav_start:wav_end], sr),
                 grid_i
             ))
         
@@ -106,27 +112,55 @@ class PhonemeDiskLoader(PhonemeLoader):
             
             try:
                 grid = textgrids.TextGrid(grid_file)
-                self.grid_dict[stem] = (str(wav_file), grid)
             except:
                 print(f'Warning: Could not open {grid_file.name} as TextGrid')
                 continue
 
-            for i in range(len(grid['phonetic'])):
-                phoneme = grid['phonetic'][i].text
+            try:
+                wav, sr = librosa.load(wav_file, sr=None, mono=True)
+            except:
+                print(f'Warning: Could not load {grid_file.name} as WAV')
+                continue
+
+            self.grid_dict[stem] = (str(wav_file), grid)
+
+            pre = None
+            for interval in range(len(grid['phonetic'])):
+                grid_i = grid['phonetic'][interval]
+                name = grid_i.text
                 
-                if (phoneme in self.phoneme_dict):
-                    self.phoneme_dict[phoneme].append(stem, i)
-                else:
-                    self.phoneme_dict[phoneme] = Phoneme(phoneme, [stem], [i])
+                wav_start = int(np.floor(sr * grid_i.xmin))
+                wav_end = int(np.floor(sr * grid_i.xmax))
+                
+                intonation = f0_heuristic(wav[wav_start:wav_end], sr, None)
+                
+                if (name not in self.phoneme_dict):
+                    self.phoneme_dict[name] = Phoneme(name, [])
+
+                instance = PhonemeInstance(
+                    self.phoneme_dict[name],
+                    stem,
+                    interval,
+                    intonation,
+                    pre=pre,
+                    nex=None
+                )
+
+                self.phoneme_dict[name].append(instance)
+
+                if pre != None:
+                    (self.phoneme_dict[pre][stem, interval-1]).nex = self.phoneme_dict[name][stem, interval]
+                pre = name
+
 
         self.num_phonemes = len(self.phoneme_dict)
         print(f'Loaded {len(self.grid_dict)} wavfile and textgrid pairs from {phoneme_subpath}')
 
     def get_word_data(self, word: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
         (wav_file, grid) = self.grid_dict[word]
-        wav = librosa.load(wav_file, sr=None, mono=True)
+        wav, sr = librosa.load(wav_file, sr=None, mono=True)
 
-        return (wav, grid)
+        return ((wav, sr), grid)
 
 class PhonemeMemLoader(PhonemeLoader):
     """
@@ -163,19 +197,40 @@ class PhonemeMemLoader(PhonemeLoader):
                 continue
             
             try:
-                wav = librosa.load(wav_file, sr=None, mono=True)
+                wav, sr = librosa.load(wav_file, sr=None, mono=True)
             except:
                 print(f'Warning: Could not load {grid_file.name} as WAV')
                 continue
 
-            self.grid_dict[stem] = (wav, grid)
-            for i in range(len(grid['phonetic'])):
-                phoneme = grid['phonetic'][i].text
+            pre = None
+            self.grid_dict[stem] = ((wav, sr), grid)
+            for interval in range(len(grid['phonetic'])):
+                grid_i = grid['phonetic'][interval]
+                name = grid_i.text
                 
-                if (phoneme in self.phoneme_dict):
-                    self.phoneme_dict[phoneme].append(stem, i)
-                else:
-                    self.phoneme_dict[phoneme] = Phoneme(phoneme, [stem], [i])
+                wav_start = int(np.floor(sr * grid_i.xmin))
+                wav_end = int(np.floor(sr * grid_i.xmax))
+                
+                intonation = f0_heuristic(wav[wav_start:wav_end], sr, None)
+                print(intonation)
+                
+                if (name not in self.phoneme_dict):
+                    self.phoneme_dict[name] = Phoneme(name, [])
+
+                instance = PhonemeInstance(
+                    self.phoneme_dict[name],
+                    stem,
+                    interval,
+                    intonation,
+                    pre=pre,
+                    nex=None
+                )
+
+                self.phoneme_dict[name].append(instance)
+
+                if pre != None:
+                    (self.phoneme_dict[pre][stem, interval-1]).nex = self.phoneme_dict[name][stem, interval]
+                pre = name
 
         self.num_phonemes = len(self.phoneme_dict)
         print(f'Loaded {len(self.grid_dict)} wavfile and textgrid pairs from {phoneme_subpath}')
@@ -197,14 +252,15 @@ if __name__ == '__main__':
     print(f'{len(all_phonemes)} phonemes found: {all_phonemes}')
 
     # pick a phoneme any phoneme
-    phoneme = 'UH1'
+    name = 'UH1'
 
     # get the word, wav section and textgrid interval of every instance
-    example = james.get_phoneme_data(phoneme)
+    example = james.get_phoneme_data(name)
 
     # print data for every instance of phoneme
-    print(f'{len(example)} instances of phoneme "{phoneme}":')
-    for ((word, i), (wav_seg, sr), grid_i) in example:
-        print(f'  interval {i} of word {word}:')
+    print(f'{len(example)} instances of phoneme "{name}":')
+    for (instance, (wav_seg, sr), grid_i) in example:
+        print(f'  interval {instance.interval} of word {instance.word}:')
+        print(f'    intonation: {instance.intonation}')
         print(f'    wav_seg duration: {len(wav_seg) / sr}s')
         print(f'    grid_i: {grid_i}')

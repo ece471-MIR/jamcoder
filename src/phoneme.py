@@ -1,84 +1,79 @@
-import metrics
+from __future__ import annotations
+import intonation
+from typing import Self
+
+class PhonemeInstance:
+    """
+    PhonemeInstance class stores:
+      phoneme {Phoneme}
+      word {string}
+      interval index within word {int}
+      intonation per f0_heuristic {float}
+      previous phoneme within word {PhonemeInstance}
+      next phoneme within word {PhonemeInstance}
+    """
+    def __init__(
+            self,
+            phoneme: Phoneme,
+
+            word: str,
+            interval: int,
+
+            intonation: float,
+            pre: str | None = None,
+            nex: str | None = None):
+        
+        self.phoneme = phoneme
+        self.word = word
+        self.interval = interval
+        self.intonation = intonation
+        self.pre = pre
+        self.nex = nex
 
 class Phoneme:
     """
     Phoneme class stores:
-      phoneme {string} (e.g. 'UW1')
+      phoneme name {string} (e.g. 'UW1')
+      phoneme instance list {list[PhonemeInstance]},
+      where each PhomemeInstance object contains:
       the following lists with corresponding elements:
-        words {list[strings]}
-        intonations per f0_heuristic {list[float]}
-        interval indices within words {list[int]}
-        previous phonemes within words {list[Phoneme}]
-        next phonemes within words {list[Phoneme]}
-
-    Number of words and intervals must be equal.
-    Words can repeat.
+        parent phoneme {Phoneme}
+        word {string}
+        interval index within word {int}
+        intonation per f0_heuristic {float}
+        name of previous phoneme within word {str}
+        name of next phoneme within word {str}
     """
     def __init__(
             self,
-            phoneme: str,
-            
-            words: list[str] = [],
-            intonations: list[float] = [],
-            intervals: list[int] = [],
-            prevs: list[Phoneme] = [],
-            nexts: list[Phoneme] = []):
-        self.num_words = len(words)
-        assert self.num_words == len(intonations) \
-            and self.num_words == len(intervals) \
-            and self.num_words == len(prevs) \
-            and self.num_words == len(nexts), \
-        'Number of words, intonations, intervals within words, previous phonemes and next phonemes differ.'
+            name: str,
+            instances: list[PhonemeInstance] = []):
+        self.name = name
+        self.instances = instances
+        self.num_instances = len(instances)
 
-        self.phoneme = phoneme
-        self.words = words
-        self.intonations = intonations
-        self.intervals = intervals
-        self.prevs = prevs
-        self.nexts = nexts
+    def __len__(self) \
+            -> int:
+        return self.num_instances
 
-    def __len__(self) -> int:
-        return self.num_words
-    
-    def __getitem__(self, idx: int) -> tuple[str, int, Phoneme, Phoneme]:
-        return (
-            self.words[idx],
-            self.intonations[idx],
-            self.intervals[idx],
-            self.prevs[idx],
-            self.nexts[idx]
-        )
+    def __getitem__(self, word_interval: tuple[string, int]) \
+            -> PhonemeInstance | None:
+        word, interval = word_interval
 
-    def __setitem__(self, idx: int, x: tuple[str, int]) -> tuple[str, int]:
-        assert type(x) == tuple and len(x) == 4 \
-        and type(x[0]) == str and type(x[1]) == int \
-        and type(x[2]) == Phoneme and type(x[3]) == Phoneme, \
-            'element must be of type tuple[str, int, Phoneme, Phoneme]'
-        self.words[idx] = x[0]
-        self.intervals[idx] = x[1]
-        self.prevs[idx] = x[2]
-        self.nexts[idx] = x[3]
-        return x
+        for i in range(self.num_instances):
+            if self.instances[i].word == word and self.instances[i].interval == interval:
+                return self.instances[i]
+        return None
 
-    def append(self, word: str, interval: int, pre: Phoneme, nex: Phoneme) \
-            -> tuple[str, int, Phoneme, Phoneme]:
+    def append(self, instance: PhonemeInstance) \
+            -> PhonemeInstance:
         """
-        Append word and corresponding interval index, previous phoneme
-        and next phoneme within word as an instance of the phoneme.
-        Returns the word and interval index.
+        Append PhonemeInstance to Phoneme.
+        Returns the supplied PhonemeInstance.
         """
-        assert type(word) == str, \
-            '"word" argument must be of type str'
-        assert type(interval) == int, \
-            '"interval" argument must be of type int'
-        assert type(pre) == Phoneme, \
-            '"pre" argument must be of type Phoneme'
-        assert type(nex) == Phoneme, \
-            '"nex" argument must be of type Phoneme'
+        assert type(instance) == PhonemeInstance, \
+            f'"phoneme" argument must be of type Phoneme, received {type(instance)}'
         
-        self.words.append(word)
-        self.intervals.append(interval)
-        self.prevs.append(pre)
-        self.nexts.append(nex)
-        self.num_words += 1
-        return (word, interval, pre, nex)
+        self.instances.append(instance)
+        self.num_instances += 1
+        return PhonemeInstance

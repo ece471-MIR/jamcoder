@@ -1,10 +1,10 @@
 ## Phonemes
 Each phoneme object stores, for every instance of the phoneme in a voice's data:
 - word (expressed in graphemes)
+- intonation metric
 - interval index within words
 - previous phoneme in word (if any)
 - next phonemes in word (if any)
-- frequency content metric
 
 ## PhonemeDataloader
 Loads all WAV and `TextGrid` data for one voice in [data](../data). Indexable by word or phoneme, with optional desired previous/next phoneme or phoneme type as defined in [typemes.py](typemes.py) and derived from the phoneme hierarchy diagram below[^1]. Provides a method for finding the optimal phoneme for a target synthesised phoneme given (optionally) the previous and/or next target phoneme to synthesise. 
