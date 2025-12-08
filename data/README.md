@@ -1,4 +1,4 @@
-### Phoneme Data
+## Phoneme Data
 Organise the data directory as shown below:
 ```
 data/
@@ -16,6 +16,6 @@ Files within voice directories that do not belong to a `wav`-`TextGrid` pair are
 
 For each voice and every `WORD` in the phonemic chart below[^1], maintain a `WORD.wav` and corresponding `WORD.TextGrid` file in the voice's subdirectory, where each `TextGrid` contains orthographic and phonemic interval annotations.
 
-![Phonemic Chart](phonemic-chart.jpg)
+![Phonemic Chart](../media/external/phonemic-chart.jpg)
 
 [^1]: “Phonemic Chart,” EnglishClub, https://www.englishclub.com/pronunciation/phonemic-chart.php (accessed Nov. 30, 2025).
