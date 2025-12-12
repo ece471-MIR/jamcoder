@@ -32,7 +32,7 @@ class PhonemeLoader(ABC):
     def __len__(self) \
             -> int:
         return self.num_phonemes
-    
+
     def list_phonemes(self) \
             -> list[str]:
         """
@@ -52,14 +52,14 @@ class PhonemeLoader(ABC):
         )
         """
         pass
-    
+
     def get_phoneme(self, name: str) \
             -> Phoneme:
         """
         Returns the Phoneme object corresponding to the queried phoneme.
         """
         return self.phoneme_dict[name]
-    
+
     def get_phoneme_data(self, name: str) \
             -> list[tuple[PhonemeInstance, tuple[np.ndarray, int], textgrids.Interval]]:
         """
@@ -73,7 +73,7 @@ class PhonemeLoader(ABC):
           )
         ]
         """
-        try:    
+        try:
             phoneme = self.phoneme_dict[name]
         except KeyError:
             return []
@@ -81,7 +81,7 @@ class PhonemeLoader(ABC):
 
         for instance in phoneme.instances:
             (wav, sr), grid = self.get_word_data(instance.word)
-            
+
             grid_i = grid['phonetic'][instance.interval]
             wav_start = int(np.floor(sr * grid_i.xmin))
             wav_end = int(np.floor(sr * grid_i.xmax))
@@ -91,7 +91,7 @@ class PhonemeLoader(ABC):
                 (wav[wav_start:wav_end], sr),
                 grid_i
             ))
-        
+
         return data
 
 class PhonemeDiskLoader(PhonemeLoader):
@@ -121,7 +121,7 @@ class PhonemeDiskLoader(PhonemeLoader):
             if not wav_file.exists():
                 print(f'Warning: {wav_file.name} does not exist')
                 continue
-            
+
             try:
                 grid = textgrids.TextGrid(grid_file)
             except:
@@ -140,12 +140,12 @@ class PhonemeDiskLoader(PhonemeLoader):
             for interval in range(len(grid['phonetic'])):
                 grid_i = grid['phonetic'][interval]
                 name = strip_stress(grid_i.text)
-                
+
                 wav_start = int(np.floor(sr * grid_i.xmin))
                 wav_end = int(np.floor(sr * grid_i.xmax))
-                
+
                 intonation = f0_heuristic(wav[wav_start:wav_end], sr, None)
-                
+
                 if (name not in self.phoneme_dict):
                     self.phoneme_dict[name] = Phoneme(name, [])
 
@@ -207,7 +207,7 @@ class PhonemeMemLoader(PhonemeLoader):
             except:
                 print(f'Warning: Could not open {grid_file.name} as TextGrid')
                 continue
-            
+
             try:
                 wav, sr = librosa.load(wav_file, sr=None, mono=True)
             except:
@@ -219,12 +219,12 @@ class PhonemeMemLoader(PhonemeLoader):
             for interval in range(len(grid['phonetic'])):
                 grid_i = grid['phonetic'][interval]
                 name = strip_stress(grid_i.text)
-                
+
                 wav_start = int(np.floor(sr * grid_i.xmin))
                 wav_end = int(np.floor(sr * grid_i.xmax))
-                
+
                 intonation = f0_heuristic(wav[wav_start:wav_end], sr, None)
-                
+
                 if (name not in self.phoneme_dict):
                     self.phoneme_dict[name] = Phoneme(name, [])
 
@@ -245,7 +245,7 @@ class PhonemeMemLoader(PhonemeLoader):
 
         self.num_phonemes = len(self.phoneme_dict)
         print(f'Loaded {len(self.grid_dict)} wavfile and textgrid pairs from {phoneme_subpath}')
-    
+
     def get_word_data(self, word: str) -> tuple[tuple[np.ndarray, int], textgrids.TextGrid]:
         return self.grid_dict[word]
 
@@ -257,7 +257,7 @@ if __name__ == '__main__':
         print('Pass a PHONEME to query the cached data.')
         print('Pass no PHONEME to reload and repickle the data.')
         exit(-1)
-    
+
     voice_name = sys.argv[1]
     root_path = Path(__file__).parent.parent.resolve()
     voice_path = root_path.joinpath(Path(f'data/{voice_name}'))
@@ -287,7 +287,7 @@ if __name__ == '__main__':
     except:
         print('Depickling failed. Recreating dataset and pickling...')
         voice = PhonemeMemLoader(voice_path)
-        
+
         try:
             pickle_file = open(pickle_path, 'wb')
             pickle.dump(voice, pickle_file)
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     all_phonemes = voice.list_phonemes()
     print(f'{len(all_phonemes)} phonemes found: {all_phonemes}')
 
-    
+
     # get the word, wav section and textgrid interval of every instance
     name = sys.argv[2]
     example = voice.get_phoneme_data(name)
