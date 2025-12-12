@@ -46,10 +46,10 @@ def f0_estimate(y, sr) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return pyin(
         y=y,
         fmin=note_to_hz('C2'),
-        fmax=note_to_hz('C7'),
+        fmax=note_to_hz('E4'),
         sr=sr,
         fill_na=None,
-        pad_mode='symmetric'
+        pad_mode='symmetric',
         # frame_length = int(np.min([2048, len(y)]))
     )
 

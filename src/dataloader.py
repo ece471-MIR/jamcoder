@@ -1,11 +1,20 @@
-import numpy as np
-from abc import ABC, abstractmethod
+import sys
 from pathlib import Path
+from abc import ABC, abstractmethod
+
+import numpy as np
+import pickle
 import textgrids
 import librosa
 
 from phoneme import Phoneme, PhonemeInstance
 from intonation import f0_heuristic
+
+def strip_stress(name: str) \
+        -> str:
+    if name == '' or name[-1] not in ['0', '1', '2', '3']:
+        return name
+    return name[:-1]
 
 class PhonemeLoader(ABC):
     """
@@ -64,7 +73,10 @@ class PhonemeLoader(ABC):
           )
         ]
         """
-        phoneme = self.phoneme_dict[name]
+        try:    
+            phoneme = self.phoneme_dict[name]
+        except KeyError:
+            return []
         data = []
 
         for instance in phoneme.instances:
@@ -127,7 +139,7 @@ class PhonemeDiskLoader(PhonemeLoader):
             pre = None
             for interval in range(len(grid['phonetic'])):
                 grid_i = grid['phonetic'][interval]
-                name = grid_i.text
+                name = strip_stress(grid_i.text)
                 
                 wav_start = int(np.floor(sr * grid_i.xmin))
                 wav_end = int(np.floor(sr * grid_i.xmax))
@@ -206,13 +218,12 @@ class PhonemeMemLoader(PhonemeLoader):
             self.grid_dict[stem] = ((wav, sr), grid)
             for interval in range(len(grid['phonetic'])):
                 grid_i = grid['phonetic'][interval]
-                name = grid_i.text
+                name = strip_stress(grid_i.text)
                 
                 wav_start = int(np.floor(sr * grid_i.xmin))
                 wav_end = int(np.floor(sr * grid_i.xmax))
                 
                 intonation = f0_heuristic(wav[wav_start:wav_end], sr, None)
-                print(intonation)
                 
                 if (name not in self.phoneme_dict):
                     self.phoneme_dict[name] = Phoneme(name, [])
@@ -239,26 +250,64 @@ class PhonemeMemLoader(PhonemeLoader):
         return self.grid_dict[word]
 
 if __name__ == '__main__':
-    print('=== PhonemeLoader demo ==================')
+    if len(sys.argv) < 2 or len(sys.argv) > 3 :
+        print('Usage: python dataloader.py VOICE [PHONEME]')
+        print('  VOICE: voice with WAV, TextGrid data in data/')
+        print('  PHONEME: phoneme to observe data for')
+        print('Pass a PHONEME to query the cached data.')
+        print('Pass no PHONEME to reload and repickle the data.')
+        exit(-1)
+    
+    voice_name = sys.argv[1]
     root_path = Path(__file__).parent.parent.resolve()
-    james_path = root_path.joinpath(Path('data/james'))
-    # james = PhonemeDiskLoader(james_path)
-    james = PhonemeMemLoader(james_path)
+    voice_path = root_path.joinpath(Path(f'data/{voice_name}'))
+    pickle_path = root_path.joinpath(Path(f'data/{voice_name}.pickle'))
 
-    print('\n=== data examples ==================')
+    if len(sys.argv) == 2:
+        print('=== PhonemeLoader repickle ==============')
+        voice = PhonemeMemLoader(voice_path)
+        all_phonemes = voice.list_phonemes()
+        print(f'{len(all_phonemes)} phonemes found: {all_phonemes}')
+        try:
+            pickle_file = open(pickle_path, 'wb')
+            pickle.dump(voice, pickle_file)
+            pickle_file.close()
+            print(f'wrote data to {pickle_path}')
+        except:
+            print(f'pickling to {pickle_path} failed')
+            exit(-1)
+        exit(0)
+
+
+    print('=== PhonemeLoader query =================')
+    try:
+        pickle_file = open(pickle_path, 'rb')
+        voice = pickle.load(pickle_file)
+        pickle_file.close()
+    except:
+        print('Depickling failed. Recreating dataset and pickling...')
+        voice = PhonemeMemLoader(voice_path)
+        
+        try:
+            pickle_file = open(pickle_path, 'wb')
+            pickle.dump(voice, pickle_file)
+            pickle_file.close()
+            print(f'wrote data to {pickle_path}')
+        except:
+            print(f'pickling to {pickle_path} failed')
+            exit(-1)
 
     # list all phonemes represented in dataset
-    all_phonemes = james.list_phonemes()
+    all_phonemes = voice.list_phonemes()
     print(f'{len(all_phonemes)} phonemes found: {all_phonemes}')
 
-    # pick a phoneme any phoneme
-    name = 'UH1'
-
+    
     # get the word, wav section and textgrid interval of every instance
-    example = james.get_phoneme_data(name)
+    name = sys.argv[2]
+    example = voice.get_phoneme_data(name)
 
     # print data for every instance of phoneme
-    print(f'{len(example)} instances of phoneme "{name}":')
+    print(f'{len(example)} instances of phoneme "{name}" in {voice_name}:')
     for (instance, (wav_seg, sr), grid_i) in example:
         print(f'  interval {instance.interval} of word {instance.word}:')
         print(f'    intonation: {instance.intonation}')
