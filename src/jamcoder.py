@@ -1,3 +1,4 @@
+import argparse
 import sys
 import wave
 from pathlib import Path
@@ -27,12 +28,12 @@ def choose_phoneme(voice: PhonemeLoader, typemes: Typeme, target: str, pre: str 
             if both_instance == None \
                     or both_instance.intonation > instance.intonation:
                 both_instance = instance
-        
+
         elif pre == instance.pre:
             if pre_instance == None \
                     or pre_instance.intonation > instance.intonation:
                 pre_instance = instance
-        
+
         elif nex == instance.nex:
             if nex_instance == None \
                     or nex_instance.intonation > instance.intonation:
@@ -41,7 +42,7 @@ def choose_phoneme(voice: PhonemeLoader, typemes: Typeme, target: str, pre: str 
             if none_instance == None \
                     or none_instance.intonation > instance.intonation:
                 none_instance = instance
-    
+
     # VERY LAZY
     if both_instance != None:
         return both_instance
@@ -52,17 +53,19 @@ def choose_phoneme(voice: PhonemeLoader, typemes: Typeme, target: str, pre: str 
     if none_instance != None:
         return none_instance
 
+
+
 def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str) \
-        -> list[PhonemeInstance]:
+        -> tuple[list[str], list[PhonemeInstance]]:
     """
     """
     g2p = G2p()
-    target_phonemes = g2p(target_text)
+    target_phonemes: list[str] = g2p(target_text)
     target_phonemes = ['' if p == ' ' else p for p in target_phonemes]
-    
-    source_phonemes = []
+
+    source_phonemes: list[PhonemeInstance] = []
     print(target_phonemes)
-    
+
     pre = None
     for i in range(len(target_phonemes)):
         if i < len(target_phonemes) - 1:
@@ -81,15 +84,8 @@ def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str) \
         )
 
         pre = curr
-    
-    return target_phonemes, source_phonemes
 
-def print_usage():
-    print('Usage: python jamcoder.py [VOICE WEIGHT] [VOICE WEIGHT]...[VOICE WEIGHT] TARGET_TEXT')
-    print('  VOICE: voice with WAV, TextGrid data in data/')
-    print('  WEIGHT: weight to apply to voice, 0.0-1.0.\n    For now, this must be 1 for one voice ONLY')
-    print('  TARGET_TEXT: target text string to synthesise')
-    print('If no voice and weight are supplied, synthesis defers to src/config.py::synth_config.')
+    return target_phonemes, source_phonemes
 
 def init_typemes() \
         -> Typeme:
@@ -130,42 +126,42 @@ def init_typemes() \
 
     return typemes
 
+def fade(t: int, length: int) \
+        -> tuple[float, float]:
+    prev_A, curr_A = ((length-t) / length, t / length)
+
+    return prev_A, curr_A
+
 if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(prog='jamcoder')
+    parser.add_argument('-c','--enable-crossfade',action='store_true',
+                        default=True)
+    parser.add_argument('-w','--crossfade-overlap', type=float, default='1.0',
+        help='Sets the overlap of the crossfade, from 0.0 to 1.0. Higher means more overlap.')
+    parser.add_argument('-o', '--outfile', type=str, default='./synth.wav')
+    parser.add_argument('--voice', type=str, required=True)
+    parser.add_argument('-s', '--sentence', nargs='+', required=True)
+    args = parser.parse_args()
+
+    voice = args.voice
+    target_text = " ".join(args.sentence)
+    crossfade = args.enable_crossfade
+    crossfade_overlap = args.crossfade_overlap
+
     try:
         nltk.data.find('averaged_perceptron_tagger_eng')
     except LookupError:
         nltk.download('averaged_perceptron_tagger_eng')
 
-    if len(sys.argv) < 2 or len(sys.argv) % 2 != 0:
-        print_usage()
+
+    if crossfade_overlap < 0.0 or crossfade_overlap > 1.0:
+        print(f'ERR: Crossfade overlap out of bounds! Must be between 0.0 and 1.0, Have {crossfade_overlap}')
         exit(-1)
 
-    voices, weights = [], []
-    for i in range(1, len(sys.argv)-1, 2):
-        voice, weight = sys.argv[i], sys.argv[i+1]
-        try: 
-            weight = float(weight)
-            assert type(voice) == str
-        except:
-            print_usage()
-            exit(-1)
-        voices.append(voice)
-        weights.append(weight)
-
-    target_text = sys.argv[-1]
-
-    """
-    All code from this point on is temporary and assumes only one voice
-    is being synthesised with weight 1.
-    """
-    if len(voices) > 1 or type(weights[0]) != float or \
-            weights[0] < 0.0 or weights[0] > 1.0:
-        print_usage()
-        exit(-1)
-    
     data_path = Path(__file__).parent.parent.resolve().joinpath(Path('data'))
-    voice_path = data_path.joinpath(Path(voices[0]))
-    pickle_path = data_path.joinpath(f'{Path(voices[0])}.pickle')
+    voice_path = data_path.joinpath(Path(voice))
+    pickle_path = data_path.joinpath(f'{Path(voice)}.pickle')
 
     try:
         pickle_file = open(pickle_path, 'rb')
@@ -174,12 +170,14 @@ if __name__ == '__main__':
     except:
         print(f'no pickle file found at {pickle_path}. creating dataloader...')
         voice = PhonemeMemLoader(voice_path)
+        pickle_file = open(pickle_path, 'wb')
+        pickle.dump(voice, pickle_file, protocol=pickle.HIGHEST_PROTOCOL)
 
     typemes = init_typemes()
     target_phonemes, source_phonemes = naive_synthesis(voice, typemes, target_text)
 
     synth_wav = np.array([])
-    sr = None
+    sr =  None
     for i in range(len(source_phonemes)):
         instance = source_phonemes[i]
 
@@ -189,11 +187,52 @@ if __name__ == '__main__':
         (wav, sr), grid = voice.get_word_data(instance.word)
 
         grid_i = grid['phonetic'][instance.interval]
-        
+
+        # select specific phoneme wav
         wav_start = int(np.floor(sr * grid_i.xmin))
         wav_end = int(np.floor(sr * grid_i.xmax))
+        wav_length = wav_end - wav_start
+
         wav_seg = wav[wav_start:wav_end]
 
-        synth_wav = np.concatenate((synth_wav, wav_seg))
+        # Crossfading
+        if crossfade and i != 0:
+            '''
+            An overlap of 1 means that the when the previous track starts
+            fading out, the next track immediatley starts to fade in.
+            An overlap of 0 means that the next track starts when the previous
+            track is done fading out completely.
+            '''
+            try:
+                prev_instance = source_phonemes[i-1]
+
+                prev_grid_i = grid['phonetic'][prev_instance.interval]
+            except IndexError:
+                synth_wav = np.concatenate((synth_wav, wav_seg))
+                continue
+
+            prev_wav_start = int(np.floor(sr * prev_grid_i.xmin))
+            prev_wav_end = int(np.floor(sr * prev_grid_i.xmax))
+            prev_wav_length = prev_wav_end - prev_wav_start
+
+            if prev_wav_length < wav_length:
+                crossfade_length = int(np.floor(0.1 * prev_wav_length))
+            else:
+                crossfade_length = int(np.floor(0.1 * wav_length))
+
+            wav_overlap = wav_seg[0:crossfade_length]
+
+            # zero-pad to establish overlap buffer
+            zerobuf = np.zeros((int(np.floor((1-crossfade_overlap) * crossfade_length))))
+            wav_seg = np.concatenate((zerobuf, wav_seg))
+
+            for t in range(crossfade_length):
+                prev_A, curr_A = fade(t, crossfade_length)
+                synth_wav[len(synth_wav) - crossfade_length + t] *= prev_A
+                synth_wav[len(synth_wav) - crossfade_length + t] += \
+                    (wav_overlap[t] * curr_A)
+            synth_wav = np.concatenate((synth_wav, wav_seg[crossfade_length:]))
+        else:
+            synth_wav = np.concatenate((synth_wav, wav_seg))
 
     write('synth.wav', sr, synth_wav)

@@ -22,7 +22,7 @@ class PhonemeInstance:
             intonation: float,
             pre: str | None = None,
             nex: str | None = None):
-        
+
         self.phoneme = phoneme
         self.word = word
         self.interval = interval
@@ -73,7 +73,7 @@ class Phoneme:
         """
         assert type(instance) == PhonemeInstance, \
             f'"phoneme" argument must be of type Phoneme, received {type(instance)}'
-        
+
         self.instances.append(instance)
         self.num_instances += 1
         return PhonemeInstance
