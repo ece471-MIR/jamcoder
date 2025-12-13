@@ -8,6 +8,7 @@ import pickle
 from scipy.io.wavfile import write
 from g2p_en import G2p
 import nltk
+import librosa
 
 from dataloader import PhonemeLoader, PhonemeMemLoader, strip_stress
 from phoneme import Phoneme, PhonemeInstance
@@ -154,7 +155,6 @@ if __name__ == '__main__':
     except LookupError:
         nltk.download('averaged_perceptron_tagger_eng')
 
-
     if crossfade_overlap < 0.0 or crossfade_overlap > 1.0:
         print(f'ERR: Crossfade overlap out of bounds! Must be between 0.0 and 1.0, Have {crossfade_overlap}')
         exit(-1)
@@ -211,6 +211,7 @@ if __name__ == '__main__':
                 synth_wav = np.concatenate((synth_wav, wav_seg))
                 continue
 
+            # find previously taken sample
             prev_wav_start = int(np.floor(sr * prev_grid_i.xmin))
             prev_wav_end = int(np.floor(sr * prev_grid_i.xmax))
             prev_wav_length = prev_wav_end - prev_wav_start
@@ -222,17 +223,51 @@ if __name__ == '__main__':
 
             wav_overlap = wav_seg[0:crossfade_length]
 
-            # zero-pad to establish overlap buffer
-            zerobuf = np.zeros((int(np.floor((1-crossfade_overlap) * crossfade_length))))
+            # zero-pad to establish overlap buffer. extend our synth wave by the
+            # same amount
+            zerobuf = \
+                np.zeros((int(np.floor((1-(crossfade_overlap/2)) * crossfade_length))))
             wav_seg = np.concatenate((zerobuf, wav_seg))
+            synth_wav = np.concatenate((synth_wav, zerobuf))
 
             for t in range(crossfade_length):
                 prev_A, curr_A = fade(t, crossfade_length)
                 synth_wav[len(synth_wav) - crossfade_length + t] *= prev_A
                 synth_wav[len(synth_wav) - crossfade_length + t] += \
                     (wav_overlap[t] * curr_A)
+
+            # spectral interpolation
+            window_size = (crossfade_length + len(zerobuf))
+            # working directly on the stft so we can istft later
+            stft_prev: np.ndarray = \
+                librosa.stft(synth_wav[-window_size:],
+                             n_fft=window_size, hop_length=window_size,
+                             window=np.ones(window_size),
+                             center=False)
+            stft_curr: np.ndarray = \
+                librosa.stft(wav_seg[0:window_size],
+                             n_fft=window_size, hop_length=window_size,
+                             window=np.ones(window_size),
+                             center=False)
+
+            stft_difference = stft_prev - stft_curr
+            stft_prev -= stft_difference/(2) #??????????
+            stft_curr -= stft_difference/(2)
+
+            si_prev = librosa.istft(stft_prev,
+                             n_fft=window_size, hop_length=window_size,
+                             window=np.ones(window_size),
+                             center=False)
+            si_curr = librosa.istft(stft_curr,
+                             n_fft=window_size, hop_length=window_size,
+                             window=np.ones(window_size),
+                             center=False)
+
+            synth_wav[-window_size:] += si_prev
+            wav_seg[0:window_size] += si_curr
             synth_wav = np.concatenate((synth_wav, wav_seg[crossfade_length:]))
         else:
             synth_wav = np.concatenate((synth_wav, wav_seg))
+
 
     write('synth.wav', sr, synth_wav)
