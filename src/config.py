@@ -1,8 +1,9 @@
 synth_config = {
-    'james_weight': 1.0,
-    'ant_weight': 1.0,
-    'megan_weight': 1.0,
-    'debug': 1,
+    'no-crossfade': False,
+    'no-dual-similarity': False,
+    'crossfade-overlap': 1.0,
+    'outfile': './synth.wav',
+    'debug': 0,
 }
 
 metric_config = {

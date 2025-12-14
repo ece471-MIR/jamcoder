@@ -3,7 +3,7 @@ from librosa import pyin, note_to_hz
 import phoneme, typemes
 from config import metric_config as config
 
-def f0_heuristic(y: np.ndarray, sr: int, method: str | None) -> float:
+def f0_heuristic(y: np.ndarray, sr: int, method: str | None = None) -> float:
     """
     Estiamtes the fundmental frequency differential in an
     audiio segment via some method. Supply one of the following

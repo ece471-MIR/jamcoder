@@ -11,120 +11,45 @@ import nltk
 
 from dataloader import PhonemeLoader, PhonemeMemLoader, strip_stress
 from phoneme import Phoneme, PhonemeInstance
-from typemes import Typeme
+from typemes import Typeme, standard_typeme_tree
+from choose import choose_phoneme
 from config import synth_config as config
 
-def choose_phoneme(voice: PhonemeLoader, typemes: Typeme, target: str, pre: str = None, nex: str = None) \
-        -> PhonemeInstance:
-    """
-    Chooses the most optimal source phoneme from the supplied voice
-    to use as the basis for the synthesised target phoneme.
-    """
-    phoneme = voice.get_phoneme(target)
-
-    both_instance, pre_instance, nex_instance, none_instance = None, None, None, None
-    for instance in phoneme.instances:
-        if pre == instance.pre and nex == instance.nex:
-            if both_instance == None \
-                    or both_instance.intonation > instance.intonation:
-                both_instance = instance
-
-        elif pre == instance.pre:
-            if pre_instance == None \
-                    or pre_instance.intonation > instance.intonation:
-                pre_instance = instance
-
-        elif nex == instance.nex:
-            if nex_instance == None \
-                    or nex_instance.intonation > instance.intonation:
-                nex_instance = instance
-        else:
-            if none_instance == None \
-                    or none_instance.intonation > instance.intonation:
-                none_instance = instance
-
-    # VERY LAZY
-    if both_instance != None:
-        return both_instance
-    if pre_instance != None:
-        return pre_instance
-    if nex_instance != None:
-        return nex_instance
-    if none_instance != None:
-        return none_instance
-
-
-
-def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str) \
+def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str, method: str) \
         -> tuple[list[str], list[PhonemeInstance]]:
     """
+    Returns a list of optimal source phoneme instances for
+    the synthesis of the passed target text.
     """
     g2p = G2p()
     target_phonemes: list[str] = g2p(target_text)
-    target_phonemes = ['' if p == ' ' else p for p in target_phonemes]
+    target_phonemes = ['' if p in typemes['silence'].child_names() else p for p in target_phonemes]
+    # target_phonemes = ['', *target_phonemes, '']
 
     source_phonemes: list[PhonemeInstance] = []
     print(target_phonemes)
 
-    pre = None
+    pre = ''
     for i in range(len(target_phonemes)):
         if i < len(target_phonemes) - 1:
             nex = strip_stress(target_phonemes[i+1])
         else:
-            nex = None
+            nex = ''
         curr = strip_stress(target_phonemes[i])
         source_phonemes.append(
             choose_phoneme(
                 voice,
                 typemes,
                 curr,
+                method,
                 pre=pre,
-                nex=nex
+                nex=nex,
             )
         )
 
         pre = curr
 
     return target_phonemes, source_phonemes
-
-def init_typemes() \
-        -> Typeme:
-    typemes = Typeme('phoneme', 0)
-    vowels, diphthongs, semivowels, consonants = \
-        typemes.declare_children(
-            ('vowels', 'diphthongs', 'semivowels', 'consonants'))
-
-    front, mid, back = \
-        vowels.declare_children(
-            ('front', 'mid', 'back'))
-    liquids, glides = \
-        semivowels.declare_children(
-            ('liquids', 'glides'))
-    nasals, stops, fricatives, whisper, affricates = \
-        typemes.declare_children(
-            ('nasals', 'stops', 'fricatives', 'whisper', 'affricates'))
-    voiced_stops, unvoiced_stops = \
-        stops.declare_children(
-            ('voiced stops', 'unvoiced stops'))
-    voiced_fricatives, unvoiced_fricatives = \
-        fricatives.declare_children(
-            ('voiced_fricatives', 'unvoiced_fricatives'))
-
-    front.declare_children(('IY', 'IH', 'EH', 'AE'))
-    mid.declare_children(('AA', 'ER', 'AH', 'AO'))
-    back.declare_children(('UW', 'UH', 'OW'))
-    diphthongs.declare_children(('AY', 'OY', 'AW', 'EY'))
-    liquids.declare_children(('W', 'L'))
-    glides.declare_children(('R', 'Y'))
-    nasals.declare_children(('M', 'N', 'NG'))
-    voiced_stops.declare_children(('B', 'D', 'G'))
-    unvoiced_stops.declare_children(('P', 'T', 'K'))
-    voiced_fricatives.declare_children(('V', 'TH', 'Z', 'ZH'))
-    unvoiced_fricatives.declare_children(('F', 'S', 'SH'))
-    whisper.declare_children(('H', 'HH'))
-    affricates.declare_children(('JH', 'CH'))
-
-    return typemes
 
 def fade(t: int, length: int) \
         -> tuple[float, float]:
@@ -135,25 +60,31 @@ def fade(t: int, length: int) \
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(prog='jamcoder')
-    parser.add_argument('-c','--enable-crossfade',action='store_true',
-                        default=True)
-    parser.add_argument('-w','--crossfade-overlap', type=float, default='1.0',
+    parser.add_argument('-nc','--no-crossfade', action='store_true',
+        default=config['no-crossfade'])
+    parser.add_argument('-w','--crossfade-overlap', type=float,
+        default=config['crossfade-overlap'],
         help='Sets the overlap of the crossfade, from 0.0 to 1.0. Higher means more overlap.')
-    parser.add_argument('-o', '--outfile', type=str, default='./synth.wav')
-    parser.add_argument('--voice', type=str, required=True)
+    parser.add_argument('-nd', '--no-dual-similarity', action='store_true',
+        default=config['no-dual-similarity'])
+    parser.add_argument('-o', '--outfile', type=str,
+        default=config['outfile'])
+    parser.add_argument('-u', '--voice', type=str, required=True)
     parser.add_argument('-s', '--sentence', nargs='+', required=True)
+    parser.add_argument('-d', '--debug', action='store_true',
+        default=config['debug'])
     args = parser.parse_args()
 
     voice = args.voice
     target_text = " ".join(args.sentence)
-    crossfade = args.enable_crossfade
+    crossfade = not args.no_crossfade
     crossfade_overlap = args.crossfade_overlap
+    outfile = args.outfile
 
     try:
         nltk.data.find('averaged_perceptron_tagger_eng')
     except LookupError:
         nltk.download('averaged_perceptron_tagger_eng')
-
 
     if crossfade_overlap < 0.0 or crossfade_overlap > 1.0:
         print(f'ERR: Crossfade overlap out of bounds! Must be between 0.0 and 1.0, Have {crossfade_overlap}')
@@ -173,15 +104,17 @@ if __name__ == '__main__':
         pickle_file = open(pickle_path, 'wb')
         pickle.dump(voice, pickle_file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    typemes = init_typemes()
-    target_phonemes, source_phonemes = naive_synthesis(voice, typemes, target_text)
+    typemes = standard_typeme_tree()
+
+    method = 'dual_equality' if args.no_dual_similarity else 'dual_similarity'
+    target_phonemes, source_phonemes = naive_synthesis(voice, typemes, target_text, method)
 
     synth_wav = np.array([])
     sr =  None
     for i in range(len(source_phonemes)):
         instance = source_phonemes[i]
 
-        if config['debug']:
+        if args.debug:
             print(f'[{target_phonemes[i]}]: word {instance.word} interval {instance.interval}')
 
         (wav, sr), grid = voice.get_word_data(instance.word)
@@ -235,4 +168,4 @@ if __name__ == '__main__':
         else:
             synth_wav = np.concatenate((synth_wav, wav_seg))
 
-    write('synth.wav', sr, synth_wav)
+    write(outfile, sr, synth_wav)

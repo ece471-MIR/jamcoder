@@ -218,7 +218,7 @@ class PhonemeMemLoader(PhonemeLoader):
             self.grid_dict[stem] = ((wav, sr), grid)
             for interval in range(len(grid['phonetic'])):
                 grid_i = grid['phonetic'][interval]
-                name = strip_stress(grid_i.text)
+                name = str(strip_stress(grid_i.text))
 
                 wav_start = int(np.floor(sr * grid_i.xmin))
                 wav_end = int(np.floor(sr * grid_i.xmax))
@@ -233,14 +233,14 @@ class PhonemeMemLoader(PhonemeLoader):
                     stem,
                     interval,
                     intonation,
-                    pre=pre,
-                    nex=None
+                    pre='' if not pre else pre,
+                    nex=''
                 )
 
                 self.phoneme_dict[name].append(instance)
 
                 if pre != None:
-                    (self.phoneme_dict[pre][stem, interval-1]).nex = self.phoneme_dict[name][stem, interval]
+                    (self.phoneme_dict[pre][stem, interval-1]).nex = name
                 pre = name
 
         self.num_phonemes = len(self.phoneme_dict)
