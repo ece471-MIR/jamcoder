@@ -15,7 +15,7 @@ from typemes import Typeme, standard_typeme_tree
 from choose import choose_phoneme
 from config import synth_config as config
 
-def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str, method: str) \
+def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str, method: str, debug: bool) \
         -> tuple[list[str], list[PhonemeInstance]]:
     """
     Returns a list of optimal source phoneme instances for
@@ -24,10 +24,11 @@ def naive_synthesis(voice: PhonemeLoader, typemes: Typeme, target_text: str, met
     g2p = G2p()
     target_phonemes: list[str] = g2p(target_text)
     target_phonemes = ['' if p in typemes['silence'].child_names() else p for p in target_phonemes]
-    # target_phonemes = ['', *target_phonemes, '']
+    target_phonemes = ['', *target_phonemes, '']
 
     source_phonemes: list[PhonemeInstance] = []
-    print(target_phonemes)
+    if (debug):
+        print(target_phonemes)
 
     pre = ''
     for i in range(len(target_phonemes)):
@@ -81,10 +82,7 @@ if __name__ == '__main__':
     crossfade_overlap = args.crossfade_overlap
     outfile = args.outfile
 
-    try:
-        nltk.data.find('averaged_perceptron_tagger_eng')
-    except LookupError:
-        nltk.download('averaged_perceptron_tagger_eng')
+    nltk.download('averaged_perceptron_tagger_eng', quiet=not args.debug)
 
     if crossfade_overlap < 0.0 or crossfade_overlap > 1.0:
         print(f'ERR: Crossfade overlap out of bounds! Must be between 0.0 and 1.0, Have {crossfade_overlap}')
@@ -107,7 +105,7 @@ if __name__ == '__main__':
     typemes = standard_typeme_tree()
 
     method = 'dual_equality' if args.no_dual_similarity else 'dual_similarity'
-    target_phonemes, source_phonemes = naive_synthesis(voice, typemes, target_text, method)
+    target_phonemes, source_phonemes = naive_synthesis(voice, typemes, target_text, method, args.debug)
 
     synth_wav = np.array([])
     sr =  None
@@ -149,9 +147,9 @@ if __name__ == '__main__':
             prev_wav_length = prev_wav_end - prev_wav_start
 
             if prev_wav_length < wav_length:
-                crossfade_length = int(np.floor(0.1 * prev_wav_length))
+                crossfade_length = int(np.floor(0.15 * prev_wav_length))
             else:
-                crossfade_length = int(np.floor(0.1 * wav_length))
+                crossfade_length = int(np.floor(0.15 * wav_length))
 
             wav_overlap = wav_seg[0:crossfade_length]
 

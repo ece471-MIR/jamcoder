@@ -124,7 +124,7 @@ def standard_typeme_tree() \
         spawn=('H', 'HH'))
     affricates = Typeme(name='affricates', depth=2,
         spawn=('JH', 'CH'))
-    silence = Typeme(name='silence', depth=1,
+    silence = Typeme(name='silence', depth=2,
         spawn=('', ' ', '.', '!', ',', '?', '...', '-'))
     
     vowels = Typeme(name='vowels', depth=1)
@@ -140,9 +140,9 @@ def standard_typeme_tree() \
     fricatives.adopt([voiced_fricatives, unvoiced_fricatives])
 
     consonants = Typeme(name='consonants', depth=1)
-    consonants.adopt([nasals, stops, fricatives, whisper, affricates])
+    consonants.adopt([nasals, stops, fricatives, whisper, affricates, silence])
     
     typemes = Typeme(name='phonemes', depth=0)
-    typemes.adopt([vowels, diphthongs, semivowels, consonants, silence])
+    typemes.adopt([vowels, diphthongs, semivowels, consonants])
     
     return typemes
