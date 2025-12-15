@@ -3,7 +3,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
-df = pd.read_csv('./results.csv')
+df = pd.read_csv('./mushra.csv')
 examinee_num = len(df['session_uuid'].unique())
 df = df[['trial_id', 'rating_stimulus', 'rating_score']]
 
