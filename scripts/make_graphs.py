@@ -20,7 +20,6 @@ names = ['Ant', 'James', 'Megan']
 trial_results: list[pd.DataFrame] = []
 for t in range(0,3):
     trial_df = df.query(f'trial_id == "trial{trialgroups[t][0]}" | trial_id == "trial{trialgroups[t][1]}" | trial_id == "trial{trialgroups[t][2]}"')
-    breakpoint()
     newdf = pd.DataFrame()
     for ref in audiorefs:
         ref_results = trial_df.query(f'rating_stimulus == "{ref}"')['rating_score'].values
@@ -28,7 +27,7 @@ for t in range(0,3):
     trial_results.append(newdf)
     plt.figure()
     boxplot = trial_results[t].boxplot(column=audiorefs)
-    plt.ylim([0, 100])
+    plt.ylim([-10, 110])
     plt.title(f'{names[t]} Corpus MOS for Intelligibility')
     plt.savefig(f'./group{t}_results.png')
 
